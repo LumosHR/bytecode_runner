@@ -208,9 +208,6 @@ class VirtualMachine(object):
     def inst_BUILD_MAP(self, size):
         self.push({})
 
-    def inst_LOAD_BUILD_CLASS(self):
-        self.push(builtins.__build_class__)
-
     def inst_STORE_MAP(self):
         tarmap, val, key = self.popn(3)
         tarmap[key] = val
@@ -496,7 +493,7 @@ class VirtualMachine(object):
                 elif inst_name == '<0>':
                     res = 'end_of_file'
                 else:
-                    raise VirtualMachineError("unsupported bytecode type: %s" % inst_name)
+                    raise VirtualMachineError("unsupported bytecode : %s" % inst_name)
             else:
                 res = bytecode_fn(*argument)
         except:
@@ -516,7 +513,9 @@ filePath = filedialog.askopenfilename(filetypes=[('PY', '*.py'), ('All Files', '
 with open(filePath, 'r', encoding='utf-8') as file:
     target = file.read()
     code_obj = compile(target, "User code", "exec")
+    """
     with open('./code_object.txt', 'w') as store_file:
         dis.dis(x=code_obj, file=store_file)
+    """
     vm = VirtualMachine()
     vm.run_code(code_obj)
