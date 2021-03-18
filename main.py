@@ -62,8 +62,8 @@ class Frame(object):
                 self.builtin_names = self.builtin_names.__dict__
 
         self.cells = {}
-        # 在make_frame中已经将closure更新到local_names里面
-
+        # 对于闭包函数而言，在make_frame中已经将closure更新到local_names里面
+        # 对于含有闭包函数的函数，
         for i in code_obj.co_cellvars:
             self.cells[i] = local_names.get(i, None)
 
@@ -369,6 +369,14 @@ class VirtualMachine(object):
         else:
             name = code_obj.co_freevars[i - len(code_obj.co_cellvars)]
         self.push(self.frame.cells[name])
+
+    def inst_STORE_DEREF(self, i):
+        code_obj = self.frame.code_obj
+        if i < len(code_obj.co_cellvars):
+            name = code_obj.co_cellvars[i]
+        else:
+            name = code_obj.co_freevars[i-len(code_obj.co_cellvars)]
+        self.frame.cells[name] = self.frame.f_locals[name] = self.pop()
 
     def inst_RETURN_VALUE(self):
         self.return_value = self.pop()
