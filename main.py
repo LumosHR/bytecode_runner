@@ -21,6 +21,7 @@ class Function(object):
         self.func_globals = self._vm.frame.f_globals
         self.func_locals = self._vm.frame.f_locals
 
+        kw = {'argdefs': self.func_defaults}
         # 处理函数闭包
         self.func_closure = {}
 
@@ -30,10 +31,6 @@ class Function(object):
         if closure:
             for i in range(len(code_obj.co_freevars)):
                 self.func_closure[code_obj.co_freevars[i]] = closure[i]
-
-        kw = {'argdefs': self.func_defaults}
-
-        if closure:
             kw['closure'] = tuple(true_cell(0) for _ in closure)
 
         self._func = types.FunctionType(code_obj, self.func_globals, **kw)
@@ -44,6 +41,11 @@ class Function(object):
             self.func_code, self.func_closure, call_args, self.func_globals, {}
         )
         return self._vm.run_frame(frame)
+
+
+def true_cell(value):
+    fn = (lambda x: lambda: x)(value)
+    return fn.__closure__[0]
 
 
 class Frame(object):
@@ -63,7 +65,8 @@ class Frame(object):
 
         self.cells = {}
         # 对于闭包函数而言，在make_frame中已经将closure更新到local_names里面
-        # 对于含有闭包函数的函数，
+        # 对于含有闭包函数的函数，要把所有闭包函数将要使用到的变量全部加入cells中。如果有些变量不是参数给出的
+        # （如该函数内的本地变量），则先将其值设为None，后续store_deref再处理
         for i in code_obj.co_cellvars:
             self.cells[i] = local_names.get(i, None)
 
@@ -71,11 +74,6 @@ class Frame(object):
             self.cells[i] = local_names[i]
 
         self.last_instruction = 0
-
-
-def true_cell(value):
-    fn = (lambda x: lambda: x)(value)
-    return fn.__closure__[0]
 
 
 class VirtualMachineError(Exception):
@@ -92,7 +90,6 @@ class VirtualMachine(object):
         self.frames = []
         self.frame = None
         self.return_value = None
-        self.last_exception = None
         sys.stdout.write(str("===PyByterun===\n"))
 
     # 数据栈上的操作
@@ -140,6 +137,22 @@ class VirtualMachine(object):
     def inst_STORE_FAST(self, name):
         self.frame.f_locals[name] = self.pop()
 
+    def inst_LOAD_GLOBAL(self, name):
+        f = self.frame
+        if name in f.f_globals:
+            val = f.f_globals[name]
+        elif name in f.builtin_names:
+            val = f.builtin_names[name]
+        else:
+            raise NameError("global name '%s' is not defined" % name)
+        self.push(val)
+
+    def inst_STORE_GLOBAL(self, name):
+        self.frame.f_globals[name] = self.pop()
+
+    def inst_DELETE_GLOBAL(self, name):
+        self.frame.f_globals.pop(name)
+
     def inst_GET_ITER(self):
         self.push(iter(self.pop()))
 
@@ -151,26 +164,10 @@ class VirtualMachine(object):
             self.pop()
             self.jump(jump + 1)
 
-    def inst_LOAD_GLOBAL(self, name):
-        f = self.frame
-        if name in f.f_globals:
-            val = f.f_globals[name]
-        elif name in f.builtin_names:
-            val = f.builtin_names[name]
-        else:
-            raise NameError("global name '%s' is not defined" % name)
-        self.push(val)
-
     def inst_UNPACK_SEQUENCE(self, count):
         args = self.pop()
         for x in reversed(args):
             self.push(x)
-
-    def inst_STORE_GLOBAL(self, name):
-        self.frame.f_globals[name] = self.pop()
-
-    def inst_DELETE_GLOBAL(self, name):
-        self.frame.f_globals.pop(name)
 
     def inst_LOAD_METHOD(self, name):
         obj = self.pop()
@@ -353,6 +350,7 @@ class VirtualMachine(object):
         func = self.pop()
         self.push(func(*posargs, **kwargs))
 
+    # 函数闭包相关操作
     def inst_LOAD_CLOSURE(self, i):
         code_obj = self.frame.code_obj
         if i < len(code_obj.co_cellvars):
@@ -375,7 +373,8 @@ class VirtualMachine(object):
         if i < len(code_obj.co_cellvars):
             name = code_obj.co_cellvars[i]
         else:
-            name = code_obj.co_freevars[i-len(code_obj.co_cellvars)]
+            name = code_obj.co_freevars[i - len(code_obj.co_cellvars)]
+        # 要同时存到cells和locals中！
         self.frame.cells[name] = self.frame.f_locals[name] = self.pop()
 
     def inst_RETURN_VALUE(self):
@@ -513,7 +512,6 @@ class VirtualMachine(object):
             else:
                 res = bytecode_fn(*argument)
         except:
-            self.last_exception = sys.exc_info()[:2] + (None,)
             res = 'exception'
 
         return res
