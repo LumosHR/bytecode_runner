@@ -9,9 +9,8 @@ import builtins
 class Function(object):
     __slots__ = [
         'func_code', 'func_name', 'func_defaults',
-        'func_globals', 'func_locals', 'func_dict',
-        'func_closure', '__name__',
-        '_vm', '_func',
+        'func_globals', 'func_locals', '_func',
+        'func_closure', '__name__', '_vm',
     ]
 
     def __init__(self, name, code_obj, defaults, closure, vm):
@@ -24,11 +23,16 @@ class Function(object):
 
         # 处理函数闭包
         self.func_closure = {}
+
+        # 若当前函数是嵌套在内部的闭包函数，则其co_freevars元组中储存着它所使用到的变量名
+        # 若当前函数含有闭包函数，则其co_cellvars元组中储存着闭包函数用到的变量名
+        # 新建函数时只需考虑当前是否是闭包函数，若是，则将co_freevars中的变量名与closure中对应位置的值储存在func_closure字典中
         if closure:
             for i in range(len(code_obj.co_freevars)):
                 self.func_closure[code_obj.co_freevars[i]] = closure[i]
 
         kw = {'argdefs': self.func_defaults}
+
         if closure:
             kw['closure'] = tuple(true_cell(0) for _ in closure)
 
@@ -59,9 +63,6 @@ class Frame(object):
 
         self.cells = {}
         # 在make_frame中已经将closure更新到local_names里面
-        for i in code_obj.co_cellvars:
-            self.cells[i] = local_names[i]
-
         for i in code_obj.co_freevars:
             self.cells[i] = local_names[i]
 
@@ -334,10 +335,9 @@ class VirtualMachine(object):
         self.push(fn)
 
     def inst_CALL_FUNCTION(self, arg):
-        name = self.pop()
-        arg_func = self.pop()
+        args = self.popn(arg)
         func = self.pop()
-        retval = func(arg_func, name)
+        retval = func(*args)
         self.push(retval)
 
     def inst_CALL_FUNCTION_KW(self, argc):
@@ -513,9 +513,9 @@ filePath = filedialog.askopenfilename(filetypes=[('PY', '*.py'), ('All Files', '
 with open(filePath, 'r', encoding='utf-8') as file:
     target = file.read()
     code_obj = compile(target, "User code", "exec")
-    """
+
     with open('./code_object.txt', 'w') as store_file:
         dis.dis(x=code_obj, file=store_file)
-    """
+
     vm = VirtualMachine()
     vm.run_code(code_obj)
