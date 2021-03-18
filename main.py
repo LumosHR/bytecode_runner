@@ -63,6 +63,10 @@ class Frame(object):
 
         self.cells = {}
         # 在make_frame中已经将closure更新到local_names里面
+
+        for i in code_obj.co_cellvars:
+            self.cells[i] = local_names.get(i, None)
+
         for i in code_obj.co_freevars:
             self.cells[i] = local_names[i]
 
@@ -359,7 +363,11 @@ class VirtualMachine(object):
         self.push(val)
 
     def inst_LOAD_DEREF(self, i):
-        name = self.frame.code_obj.co_freevars[i]
+        code_obj = self.frame.code_obj
+        if i < len(code_obj.co_cellvars):
+            name = code_obj.co_cellvars[i]
+        else:
+            name = code_obj.co_freevars[i - len(code_obj.co_cellvars)]
         self.push(self.frame.cells[name])
 
     def inst_RETURN_VALUE(self):
